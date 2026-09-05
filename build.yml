@@ -1,0 +1,32 @@
+name: Build Game APK
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      - name: Prepare Game Directory
+        run: |
+          mkdir -p dist
+          if [ -f "index.html" ]; then
+            cp index.html dist/index.html
+          else
+            echo "<html><body><h1>G3 HASSAN</h1></body></html>" > dist/index.html
+          fi
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: G3-Hassan-Game
+          path: dist/
+          
