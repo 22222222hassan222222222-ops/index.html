@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>G3 HASSAN - سكران بالدم</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; touch-action: none; font-family: 'Segoe UI', Tahoma, sans-serif; }
+    body { background: #0a0a0a; overflow: hidden; width: 100vw; height: 100vh; color: white; }
+    
+    .bg-text {
+      position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+      font-size: 8vw; font-weight: 900; color: rgba(255, 0, 51, 0.05);
+      white-space: nowrap; text-align: center; pointer-events: none; z-index: 1;
+    }
+    
+    #ui { position: absolute; top: 20px; left: 20px; right: 20px; display: flex; justify-content: space-between; z-index: 10; pointer-events: none; }
+    .score-board { font-size: 22px; font-weight: bold; color: #ff0033; text-shadow: 0 0 10px #ff0033; }
+    .boss-tag { font-size: 24px; font-weight: 900; color: #fff; text-shadow: 0 0 15px #fff; direction: ltr; }
+
+    .screen {
+      position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+      background: rgba(10, 10, 10, 0.85); backdrop-filter: blur(5px);
+      display: flex; flex-direction: column; justify-content: center; align-items: center; z-index: 20; text-align: center;
+    }
+    
+    h1 { font-size: 45px; color: #ff0033; text-shadow: 0 0 25px #ff0033; margin-bottom: 10px; }
+    h2 { font-size: 20px; color: #fff; margin-bottom: 30px; letter-spacing: 2px; }
+    p { font-size: 18px; color: #aaa; margin-bottom: 20px; }
+    
+    .btn {
+      background: transparent; border: 2px solid #ff0033; padding: 15px 50px;
+      color: #ff0033; font-size: 22px; font-weight: bold; border-radius: 8px;
+      box-shadow: inset 0 0 10px rgba(255, 0, 51, 0.2), 0 0 15px rgba(255, 0, 51, 0.4);
+      cursor: pointer; transition: 0.2s; text-transform: uppercase;
+    }
+    .btn:active { background: #ff0033; color: #fff; }
+    
+    canvas { display: block; width: 100%; height: 100%; z-index: 5; position: relative; }
+    
+    @keyframes shake {
+      0% { transform: translate(1px, 1px) rotate(0deg); }
+      10% { transform: translate(-1px, -2px) rotate(-1deg); }
+      20% { transform: translate(-3px, 0px) rotate(1deg); }
+      30% { transform: translate(3px, 2px) rotate(0deg); }
+      40% { transform: translate(1px, -1px) rotate(1deg); }
+      50% { transform: translate(-1px, 2px) rotate(-1deg); }
+      60% { transform: translate(-3px, 1px) rotate(0deg); }
+      70% { transform: translate(3px, 1px) rotate(-1deg); }
+      80% { transform: translate(-1px, -1px) rotate(1deg); }
+      90% { transform: translate(1px, 2px) rotate(0deg); }
+      100% { transform: translate(1px, -2px) rotate(-1deg); }
+    }
+    .shake { animation: shake 0.4s; }
+  </style>
+</head>
+<body>
+
+  <div class="bg-text">G3 HASSAN<br>سكران بالدم</div>
+
+  <div id="ui">
+    <div class="score-board">السكور: <span id="scoreDisplay">0</span></div>
+    <div class="boss-tag">عمك حسن ياعرص 👑</div>
+  </div>
+
+  <div id="startScreen" class="screen">
+    <h1>حرب الشوارع</h1>
+    <h2>[ سكران بالدم ]</h2>
+    <p>اضغط للقفز.. اضغط مرتين للقفز المزدوج للهروب من الفخاخ!</p>
+    <!-- تم إضافة ontouchstart للزرار لضمان الاستجابة السريعة للموبايل -->
+    <button class="btn" onclick="startGame(event)" ontouchstart="startGame(event)">ابدأ التحدي</button>
+  </div>
+
+  <div id="gameOverScreen" class="screen" style="display: none;">
+    <h1>Game Over</h1>
+    <p style="font-size: 24px; color: #fff;">جبت <span id="finalScore" style="color:#ff0033; font-weight:bold; font-size:30px;">0</span> نقطة</p>
+    <p style="color: #0ff; font-size: 20px; font-weight: bold; margin-bottom: 30px;">يلا نلعبو جولة تانية! 🔥</p>
+    <button class="btn" onclick="startGame(event)" ontouchstart="startGame(event)">إعادة اللعب</button>
+  </div>
+
+  <canvas id="gameCanvas"></canvas>
+
+  <script>
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+    
+    function resize() { canvas.width = window.innerWidth; canvas.height = window.innerHeight; }
+    window.addEventListener('resize', resize); resize();
+
+    let isPlaying = false;
+    let score = 0;
+    let gameSpeed = 8;
+    let frameCount = 0;
+    let animationId;
+
+    const groundHeight = 100;
+    let groundY = canvas.height - groundHeight;
+
+    let player = {
+      x: 50, y: 0, size: 30,
+      vy: 0, gravity: 0.8, jumpPower: -13,
+      jumps: 0, maxJumps: 2
+    };
+
+    let obstacles = [];
+    let particles = [];
+
+    // التعديل هنا: منع إعاقة أزرار الواجهة
+    function handleJump(e) {
+      if (!isPlaying) return; // لو اللعبة مش شغالة، سيب التاتش يشتغل على الزراير عادي
+      if (e && e.cancelable) e.preventDefault();
+      
+      if (player.jumps < player.maxJumps) {
+        player.vy = player.jumpPower;
+        player.jumps++;
+        createParticles(player.x, player.y + player.size, '#fff', 5);
+      }
+    }
+    
+    window.addEventListener('touchstart', handleJump, {passive: false});
+    window.addEventListener('mousedown', handleJump);
+
+    function createParticles(x, y, color, count) {
+      for(let i=0; i<count; i++) {
+        particles.push({
+          x: x, y: y,
+          vx: (Math.random() - 0.5) * 10,
+          vy: (Math.random() - 0.5) * 10,
+          size: Math.random() * 4 + 2,
+          color: color, alpha: 1
+        });
+      }
+    }
+
+    function spawnObstacle() {
+      let type = Math.random();
+      let obs = { x: canvas.width, passed: false };
+      
+      if (type < 0.5) {
+        obs.width = Math.random() * 40 + 30;
+        obs.height = 40;
+        obs.y = groundY - obs.height;
+      } else {
+        obs.width = 30;
+        obs.height = Math.random() * 50 + 60;
+        obs.y = groundY - obs.height;
+      }
+      obstacles.push(obs);
+    }
+
+    function startGame(e) {
+      if(e) e.preventDefault(); 
+      if(isPlaying) return; // عشان الزرار ميتداسش مرتين ويسرع اللعبة
+
+      document.getElementById('startScreen').style.display = 'none';
+      document.getElementById('gameOverScreen').style.display = 'none';
+      document.body.classList.remove('shake');
+      
+      groundY = canvas.height - groundHeight;
+      player.y = groundY - player.size;
+      player.vy = 0;
+      player.jumps = 0;
+      
+      obstacles = []; particles = [];
+      score = 0; gameSpeed = 8; frameCount = 0;
+      isPlaying = true;
+      
+      cancelAnimationFrame(animationId);
+      updateUI(); loop();
+    }
+
+    function updateUI() {
+      document.getElementById('scoreDisplay').innerText = score;
+    }
+
+    function gameOver() {
+      isPlaying = false;
+      document.body.classList.add('shake');
+      createParticles(player.x + player.size/2, player.y + player.size/2, '#ff0033', 30);
+      
+      setTimeout(() => {
+        document.getElementById('finalScore').innerText = score;
+        document.getElementById('gameOverScreen').style.display = 'flex';
+      }, 500);
+    }
+
+    function loop() {
+      if(!isPlaying) {
+        drawParticles();
+        return;
+      }
+
+      ctx.fillStyle = '#0a0a0a';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      frameCount++;
+      gameSpeed += 0.002;
+
+      ctx.fillStyle = '#1a1a1a';
+      ctx.fillRect(0, groundY, canvas.width, groundHeight);
+      ctx.strokeStyle = '#ff0033';
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.moveTo(0, groundY);
+      ctx.lineTo(canvas.width, groundY);
+      ctx.stroke();
+
+      player.vy += player.gravity;
+      player.y += player.vy;
+
+      if (player.y + player.size >= groundY) {
+        player.y = groundY - player.size;
+        player.vy = 0;
+        player.jumps = 0;
+      }
+
+      ctx.shadowBlur = 15;
+      ctx.shadowColor = '#ff0033';
+      ctx.fillStyle = '#ff0033';
+      ctx.fillRect(player.x, player.y, player.size, player.size);
+      ctx.shadowBlur = 0;
+
+      if (frameCount % Math.max(40, Math.floor(120 - gameSpeed * 5)) === 0) {
+        spawnObstacle();
+      }
+
+      for (let i = obstacles.length - 1; i >= 0; i--) {
+        let obs = obstacles[i];
+        obs.x -= gameSpeed;
+
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(obs.x, obs.y, obs.width, obs.height);
+
+        if (!obs.passed && obs.x + obs.width < player.x) {
+          score += 10;
+          obs.passed = true;
+          updateUI();
+        }
+
+        if (player.x < obs.x + obs.width &&
+            player.x + player.size > obs.x &&
+            player.y < obs.y + obs.height &&
+            player.y + player.size > obs.y) {
+            gameOver();
+        }
+
+        if (obs.x + obs.width < 0) {
+          obstacles.splice(i, 1);
+        }
+      }
+
+      drawParticles();
+      animationId = requestAnimationFrame(loop);
+    }
+
+    function drawParticles() {
+      for (let i = particles.length - 1; i >= 0; i--) {
+        let p = particles[i];
+        p.x += p.vx; p.y += p.vy; p.alpha -= 0.04;
+        
+        if (p.alpha <= 0) {
+          particles.splice(i, 1);
+        } else {
+          ctx.globalAlpha = p.alpha;
+          ctx.fillStyle = p.color;
+          ctx.fillRect(p.x, p.y, p.size, p.size);
+          ctx.globalAlpha = 1;
+        }
+      }
+    }
+  </script>
+</body>
+  </html>
+  
